@@ -1,36 +1,23 @@
-// ======================= TIME-TRAVEL DEBUGGER - SERVER TEMPLATE =======================
-
-// Pipeline this file implements, top to bottom:
-//   0. Receive  -- stream the client's .trace bytes straight to source.bin on disk
-//   1. Pass 0X0   -- validity check (FUNC/FUNC_END matching)
-//   2. Pass 0X1   -- resolve(): copy EVERY source line into resolve.bin as [offset][size][string], then patch CALL targets.
-//   3. Pass 0X2   -- execute resolve.bin: tokenize ONE line at a time, update the call stack, take a snapshot -> Timeline
-//   4. Pass 0X3   -- serialize Timeline -> session.tdbg(header + snapshot records + dense index)
-
-
 #include <iostream>
 #include <string>
 #include <cstdint>
 #include <fstream>
+#include <stdexcept>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <cstdint>
 #include <cstdio>
 using namespace std;
 
-// ---- Constants ----
 const int32_t MAX_VARS_PER_FRAME = 16;
 const int32_t MAX_STACK_DEPTH = 64;
 const int32_t MAX_FUNCS = 128;
-const int32_t MAX_TOKENS = MAX_VARS_PER_FRAME + 2; // kW + func_name + upto 16 params/args
+const int32_t MAX_TOKENS = MAX_VARS_PER_FRAME + 2; 
 const int32_t MAX_PATCHES = MAX_FUNCS * 4;
-const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024; // sanity cap on the declared file length
-const int32_t IO_BUFFER_SIZE = 64 * 1024;                  // fixed buffer for streaming to/from disk
-const int32_t SOCKET_TIMEOUT_SEC = 5;                      // TODO: apply as SO_RCVTIMEO so a deadclient can't hang the server forever
+const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024; 
+const int32_t IO_BUFFER_SIZE = 64 * 1024;                  
+const int32_t SOCKET_TIMEOUT_SEC = 5;                      
 
-// ---- Custom data structures
-
-// Stack: back the live Call Stack during execution
 template <typename T>
 class Stack
 {
@@ -43,33 +30,74 @@ class Stack
     int32_t count;
 
 public:
-    // Implement these functions:
     Stack()
-    { // initialize the stack
+    { 
+        top = nullptr;
+        count = 0;
     }
     void push(const T& val)
     {
-
-        // pushes the value on the stack if max limit is not reached yet.
+        if (count >= MAX_STACK_DEPTH)
+        {
+            cout << "Stack overflow: max depth reached" << endl;
+            return;
+        }
+        Node* n = new Node;
+        n->data = val;
+        n->next = top;   
+        top = n;         
+        count++;      
     }
     T pop()
     {
-        // pop the top value on the stack
+        if (top == nullptr)
+        {
+            throw runtime_error("pop on empty stack");
+        }
+        Node* temp = top;
+        T val = temp->data;   
+        top = top->next; 
+
+        delete temp;
+        count--;
+        return val;
     }
     T& peek()
     {
-        // returns the top value on the stack
+        if (top == nullptr)
+        {
+            throw runtime_error("peek on empty stack");
+        }
+        return top->data;
     }
     bool isEmpty()
     {
+        return top == nullptr;
     }
     int32_t depth()
     {
+        return count;
     }
     int32_t snapshot_into(T out[], int32_t maxLen)
     {
-        // copies every frame, top to bottom in the array given as a parameter
-        // this is what buildSnapshot() call, returns count written
+        int32_t i = 0;
+        Node* cur = top;
+        while (cur != nullptr && i < maxLen)
+        {
+            out[i] = cur->data;
+            cur = cur->next;
+            i++;
+        }
+        return i;
+    }
+
+    ~Stack() {
+        while (top != nullptr)
+        {
+            Node* temp = top;
+            top = top->next;
+            delete temp;
+        }
     }
 };
 
