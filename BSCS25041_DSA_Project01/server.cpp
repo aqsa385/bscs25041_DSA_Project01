@@ -3,8 +3,6 @@
 #include <cstdint>
 #include <fstream>
 #include <stdexcept>
-#include <unistd.h>
-#include <sys/socket.h>
 #include <cstdint>
 #include <cstdio>
 using namespace std;
@@ -185,36 +183,133 @@ void writeHeader(FILE* f, const TTDBHeader& h)
     fwrite(&h.indexOffset, sizeof(int64_t), 1, f);
 }
 
-// resolve.bin - bookkeeping
 struct FuncEntry
 {
     string funcName;
-    int64_t byteOffsetInResolveBin; // where this function's FUNC header record sits
+    int64_t byteOffsetInResolveBin; 
 };
 struct PendingPatch
 {
-    int64_t byteOffsetOfOffsetField; // where in resolve.bin to seek back and overwrite
+    int64_t byteOffsetOfOffsetField; 
     string targetFuncName;
 };
 
 
-
-// PASS 0x0: READING source.bin + VALIDITY CHECK
 bool readSourceLine(ifstream& in, string& out)
 {
-    // reads the next nonblank line
+    string line;
+    while (getline(in, line))
+    {
+
+        if (line.size() > 0 && line[line.size() - 1] == '\r')
+        {
+            line.pop_back();
+        }
+
+        bool blank = true;
+        for (int i = 0; i < line.size(); i++)
+        {
+            if (line[i] != ' ' && line[i] != '\t')
+            {
+                blank = false;   
+                break;
+            }
+        }
+
+        if (blank == false)
+        {
+            out = line;
+            return true;
+        }
+
+    }
+    return false;
+    
 }
+string getWord(const string& line, int n)   
+{
+    int i = 0;
+    int len = line.size();
+    int count = 0;
+
+    while (i < len)
+    {
+
+        while (i < len && (line[i] == ' ' or line[i] == '\t'))
+        {
+            i++;
+        }
+
+        string word = "";
+        while (i < len && line[i] != ' ' && line[i] != '\t')
+        {
+            word += line[i];
+            i++;
+        }
+
+        count++;
+        if (count == n)
+        {
+            return word;
+        }
+    }
+    return "";   
+}
+
 string firstWord(const string& line)
 {
-    // returns first word from the input string
+    return getWord(line, 1);
 }
+
 string secondWord(const string& line)
 {
-    // returns the second word
+    return getWord(line, 2);
 }
+
 bool validateProgram(const char* sourcePath)
 {
-    // for each func defined there should be exactly one func_end and no nested funcs allowed - 
+    ifstream read(sourcePath);
+    if (!read.is_open())
+    {
+        cout << "Error: cannot open " << sourcePath << endl;
+        return false;
+    }
+
+    bool inFunc = false;       
+    string line;
+    int32_t lineNo = 0;
+
+    while (readSourceLine(read, line))
+    {
+        lineNo++;
+        string kw = firstWord(line);
+
+        if (kw == "func")
+        {
+            if (inFunc)
+            {
+                cout << "Error (instruction " << lineNo << "): nested func or missing func_end" << endl;
+                return false;
+            }
+            inFunc = true;
+        }
+        else if (kw == "func_end")
+        {
+            if (!inFunc)
+            {
+                cout << "Error (instruction " << lineNo << "): func_end without a matching func" << endl;
+                return false;
+            }
+            inFunc = false;
+        }
+    }
+
+    if (inFunc)
+    {
+        cout << "Error: function was never closed with func_end" << endl;
+        return false;
+    }
+    return true;
 }
 
 // PASS 0x1: RESOLVE() -> resolve.bin
