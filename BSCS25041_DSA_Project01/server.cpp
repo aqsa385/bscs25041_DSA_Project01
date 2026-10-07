@@ -448,11 +448,10 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
         }
     }
 
-    cout << "Error: no main function\n";
+    cout << "Error: no main function" << endl;
     return -1;
 }
 
-// PASS 0x2: EXECUTION (tokenization happens here)
 enum TokenType
 {
     KEYWORD,
@@ -466,23 +465,55 @@ struct Token
 };
 int32_t tokenizeLine(const string& line, Token tokens[], int32_t maxTokens)
 {
-    // first word is always a instruction keyword
-    // instruction set = [func, func_end, call, set, add, sub, mul and div]
-    // next word is identifier like name of a function, variable name
-    // after identifier all are the params/arg, space separated
+    int32_t count = 0;
+    int i = 0;
+    int len = line.size();
+
+    while (i < len && count < maxTokens)
+    {
+        while (i < len && (line[i] == ' ' or line[i] == '\t'))
+        {
+            i++;
+        }
+        if (i >= len)
+        {
+            break;
+        }
+
+        string word = "";
+        while (i < len && line[i] != ' ' && line[i] != '\t')
+        {
+            word += line[i];
+            i++;
+        }
+
+        if (count == 0)
+        {
+            tokens[count].type = KEYWORD;
+        }
+        else if (count == 1)
+        {
+            tokens[count].type = IDENTIFIER;
+        }
+        else
+        {
+            tokens[count].type = PARAM;
+        }
+        tokens[count].text = word;
+        count++;
+    }
+    return count;
+
 }
 Snapshot* buildSnapshot(Stack<Frame>& callStack)
 {
-    // build the snapshot based on the callStack given
+    Snapshot* s = new Snapshot;   
+    s->stackDepth = callStack.snapshot_into(s->callStack, MAX_STACK_DEPTH);
+    return s;
 }
 void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& timeline)
 {
-    // initialize the call stack
-    // make the main frame
-    // push main frame on the call stack
-
-    // implementation:
-    // execute line by line, and according to the keyword perform action
+    
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
