@@ -463,6 +463,73 @@ struct Token
     TokenType type;
     string text;
 };
+
+bool isNumber(const string& s)
+{
+    if (s.size() == 0)
+    {
+        return false;
+    }
+
+    int start = 0;
+
+    if (s[0] == '-')
+    {
+        if (s.size() == 1)
+        {
+            return false;
+        }
+        start = 1;
+    }
+    for (int i = start; i < s.size(); i++)
+    {
+        if (s[i] < '0' or s[i] > '9')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void initFrame(Frame& fr, const string& name)
+{
+    fr.func_name = name;
+    fr.argc = 0;
+
+    fr.returnLine = -1;
+
+    fr.localCount = 0;
+
+    for (int i = 0; i < MAX_VARS_PER_FRAME; i++)
+    {
+        fr.argv[i].name = "";
+
+        fr.argv[i].value = 0;
+
+        fr.locals[i].name = "";
+        fr.locals[i].value = 0;
+    }
+}
+
+Variable* findVar(Frame& fr, const string& name)
+{
+    for (int i = 0; i < fr.argc; i++)
+    {
+        if (fr.argv[i].name == name)
+        {
+            return &fr.argv[i];
+        }
+    }
+    for (int i = 0; i < fr.localCount; i++)
+    {
+        if (fr.locals[i].name == name)
+        {
+            return &fr.locals[i];
+        }
+    }
+    return nullptr;   
+}
+
 int32_t tokenizeLine(const string& line, Token tokens[], int32_t maxTokens)
 {
     int32_t count = 0;
