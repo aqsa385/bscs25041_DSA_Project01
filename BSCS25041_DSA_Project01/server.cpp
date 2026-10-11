@@ -617,7 +617,12 @@ Snapshot* buildSnapshot(Stack<Frame>& callStack)
 }
 void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& timeline)
 {
-    
+    Stack<Frame> callStack;
+    Frame mainFrame;
+
+    initFrame(mainFrame, "main");
+
+    callStack.push(mainFrame);
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
