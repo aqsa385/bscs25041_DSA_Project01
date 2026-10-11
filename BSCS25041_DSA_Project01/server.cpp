@@ -530,6 +530,43 @@ Variable* findVar(Frame& fr, const string& name)
     return nullptr;   
 }
 
+void setVar(Frame& fr, const string& name, int32_t value)
+{
+    Variable* v = findVar(fr, name);
+    if (v != nullptr)
+    {
+        v->value = value;
+        return;
+    }
+
+    if (fr.localCount >= MAX_VARS_PER_FRAME)
+    {
+        cout << "Error: too many variables in function " << fr.func_name << endl;
+        return;
+    }
+
+    fr.locals[fr.localCount].name = name;
+    fr.locals[fr.localCount].value = value;
+    fr.localCount++;
+}
+
+int32_t getValue(Frame& fr, const string& text)
+{
+    if (isNumber(text))
+    {
+        return atoi(text.c_str());
+    }
+
+    Variable* v = findVar(fr, text);
+    if (v == nullptr)
+    {
+        cout << "Error: variable '" << text << "' is not defined\n";
+        return 0;
+    }
+
+    return v->value;
+}
+
 int32_t tokenizeLine(const string& line, Token tokens[], int32_t maxTokens)
 {
     int32_t count = 0;
