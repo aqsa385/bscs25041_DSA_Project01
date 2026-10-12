@@ -789,6 +789,7 @@ void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& ti
 // PASS 0x3: SERIALIZE TIMELINE
 void writeTdbg(Timeline& timeline, const char* tdbgPath)
 {
+  
     // placeholder for header
     // index array of the size of stepcount from the timeline
     // placing each snapshot in the file while maintaining the index(starting point of each nth snapshot)
