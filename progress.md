@@ -17,5 +17,11 @@ write extra some helper functions for this
 also did some testing of functions in main function
 Tomorrow I will complete all functions as it is the deadline:(
 **9-10-2026**
-Completed the remaining execution functions: `tokenizeLine`, `buildSnapshot` 
+Completed the remaining execution functions tokenizeLine, buildSnapshot 
 Tomorrow I will do execution part
+**11-10-2026**
+Started serialization stage 
+Removed the Linux headers because they do not work on Windows.
+Fixed the fopen error by adding _CRT_SECURE_NO_WARNINGS.
+also did testing for some functions 
+
