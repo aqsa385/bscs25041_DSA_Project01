@@ -617,12 +617,173 @@ Snapshot* buildSnapshot(Stack<Frame>& callStack)
 }
 void executeProgram(const char* resolveBinPath, int64_t mainOffset, Timeline& timeline)
 {
+    FILE* f = fopen(resolveBinPath, "rb");
+    if (f == nullptr)
+    {
+        cout << "Error: cannot open " << resolveBinPath << endl;
+        return;
+    }
+
     Stack<Frame> callStack;
     Frame mainFrame;
 
     initFrame(mainFrame, "main");
 
     callStack.push(mainFrame);
+
+    fseek(f, (long)mainOffset, SEEK_SET);
+
+    Token tokens[MAX_TOKENS];
+    bool running = true;
+
+    while (running)
+    {
+        int64_t pos = ftell(f);                   
+        string line;
+
+        int64_t offsetField = readResolveRecord(f, line);
+
+        if (offsetField == -1)
+        {
+            break;                                
+        }
+
+        int32_t n = tokenizeLine(line, tokens, MAX_TOKENS);
+        string kw = tokens[0].text;
+        Frame& cur = callStack.peek();            
+
+        if (kw == "func")
+        {
+        }
+        else if (kw == "set")
+        {
+            if (n < 3)
+            {
+                cout << "Error: set needs a name and a value" << endl;
+                break;
+            }
+            int32_t v = getValue(cur, tokens[2].text);
+
+            setVar(cur, tokens[1].text, v);
+        }
+        else if (kw == "add" or kw == "sub" or kw == "mul" or kw == "div")
+        {
+            if (n < 3)
+            {
+                cout << "Error: " << kw << " needs two values" << endl;
+                break;
+            }
+            int32_t a = getValue(cur, tokens[1].text);
+
+            int32_t b = getValue(cur, tokens[2].text);
+
+            int32_t result = 0;
+
+            if (kw == "add")
+            {
+                result = a + b;
+            }
+            else if (kw == "sub")
+            {
+                result = a - b;
+            }
+            else if (kw == "mul")
+            {
+                result = a * b;
+            }
+            else   
+            {
+                if (b == 0)
+                {
+                    cout << "Error: division by zero" << endl;
+                    break;
+                }
+                result = a / b;
+            }
+            setVar(cur, tokens[1].text, result);   
+        }
+        else if (kw == "call")
+        {
+            int32_t argCount = n - 2;
+
+            if (callStack.depth() >= MAX_STACK_DEPTH)
+            {
+                cout << "Error: stack overflow (too many nested calls)" << endl;
+                break;
+            }
+
+            cur.returnLine = (int32_t)pos;
+
+            string header;
+            fseek(f, (long)offsetField, SEEK_SET);
+
+            readResolveRecord(f, header);
+
+            Token ht[MAX_TOKENS];
+            int32_t hn = tokenizeLine(header, ht, MAX_TOKENS);
+            int32_t paramCount = hn - 2;
+
+            if (paramCount != argCount)
+            {
+                cout << "Error: wrong number of arguments in call to " << tokens[1].text << endl;
+                break;
+            }
+
+            Frame newFrame;
+            initFrame(newFrame, tokens[1].text);
+
+            newFrame.argc = paramCount;
+
+            for (int i = 0; i < paramCount; i++)
+            {
+                newFrame.argv[i].name = ht[2 + i].text;  
+
+                newFrame.argv[i].value = getValue(cur, tokens[2 + i].text); 
+            }
+            callStack.push(newFrame);
+
+        }
+        else if (kw == "func_end")
+        {
+            if (callStack.depth() == 1)
+            {
+                timeline.record(buildSnapshot(callStack));
+                break;
+            }
+
+            Frame finished = callStack.pop();      
+            Frame& caller = callStack.peek();    
+
+            string callLine;
+
+            fseek(f, (long)caller.returnLine, SEEK_SET);
+
+            readResolveRecord(f, callLine);
+
+            Token ct[MAX_TOKENS];
+            tokenizeLine(callLine, ct, MAX_TOKENS);
+
+            for (int i = 0; i < finished.argc; i++)
+            {
+                string argName = ct[2 + i].text;
+
+                if (!isNumber(argName))            
+                {
+                    setVar(caller, argName, finished.argv[i].value);
+                }
+            }
+
+        }
+        else
+        {
+            cout << "Error: unknown instruction '" << kw << endl;
+            break;
+        }
+
+        timeline.record(buildSnapshot(callStack));
+    }
+
+    fclose(f);
 }
 
 // PASS 0x3: SERIALIZE TIMELINE
