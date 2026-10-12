@@ -24,4 +24,7 @@ Started serialization stage
 Removed the Linux headers because they do not work on Windows.
 Fixed the fopen error by adding _CRT_SECURE_NO_WARNINGS.
 also did testing for some functions 
+**12-10-2026**
+Completed writeTdbg. It writes the header, all snapshots and the index array to session.tdbg
+I tested full program with the demo code and the error cases (nested func, no main, call to an unknown function
 
