@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <iostream>
 #include <string>
 #include <cstdint>
@@ -833,26 +834,78 @@ void writeSnapshot(FILE* f, const Snapshot& s)
 void writeTdbg(Timeline& timeline, const char* tdbgPath)
 {
   
-    // placeholder for header
+    FILE* f = fopen(tdbgPath, "wb");
+    if (f == nullptr)
+    {
+        cout << "Error: cannot create " << tdbgPath << endl;
+        return;
+    }
+
+    int32_t steps = timeline.getStepCount();
+
     TTDBHeader h;
     h.version = 1;
     h.stepCount = 0;
-    // index array of the size of stepcount from the timeline
-    // placing each snapshot in the file while maintaining the index(starting point of each nth snapshot)
-    // after timeline add the index array i the file
-    // update the header
+    
+    h.indexOffset = 0;
+    writeHeader(f, h);
+
+    int32_t size;
+    if (steps > 0)
+    {
+        size = steps;
+    }
+    else
+    {
+        size = 1;
+    }
+    int64_t* index = new int64_t[size];
+
+    TimelineNode* node = timeline.begin();
+    int32_t i = 0;
+
+    while (node != nullptr && i < steps)
+    {
+        index[i] = ftell(f);  
+
+        writeSnapshot(f, *(node->data));
+
+        node = node->next;
+        i++;
+    }
+
+    int64_t indexStart = ftell(f);
+    for (int j = 0; j < steps; j++)
+    {
+        fwrite(&index[j], sizeof(int64_t), 1, f);
+    }
+
+    h.stepCount = steps;
+
+    h.indexOffset = indexStart;
+
+    fseek(f, 0, SEEK_SET);
+    writeHeader(f, h);
+
+    fclose(f);
+    delete[] index;
+
 }
-// main section
+
 int32_t main()
 {
 
     if (!validateProgram("source.bin"))
     {
-        // send an error response instead of a .tdbg file
         return 1;
     }
 
     int64_t mainOffset = resolveProgram("source.bin", "resolve.bin");
+
+    if (mainOffset == -1)
+    {
+        return 1;
+    }
 
     Timeline timeline;
     executeProgram("resolve.bin", mainOffset, timeline);
