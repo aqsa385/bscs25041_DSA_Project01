@@ -16,3 +16,6 @@ Did understand and complete two functions of execution
 write extra some helper functions for this
 also did some testing of functions in main function
 Tomorrow I will complete all functions as it is the deadline:(
+**9-10-2026**
+Completed the remaining execution functions: `tokenizeLine`, `buildSnapshot` 
+Tomorrow I will do execution part
