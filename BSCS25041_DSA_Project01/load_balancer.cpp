@@ -115,14 +115,33 @@ sig_atomic_t flag = 1;
 
 bool sendAll(int sock, const char* buf, size_t n)
 {
-    // Reply format: [status: 1 byte][sending_material][checksum: 4 bytes].
-    // send() may send fewer bytes than asked for, so keep calling it until all n bytes are sent.
-
+    
 }
 bool sendError(int sock, const string& message)
 {
-    // Reply format: [status: 1 byte][payload until close][checksum: 4 bytes].
-    // For an error: send one byte with value 1, then the message text. 
+    char status = 1;
+
+    uint32_t crc = 0;
+    crc = crc32Update(crc, &status, 1);
+
+    crc = crc32Update(crc, message.c_str(), message.size());
+
+    if (!sendAll(sock, &status, 1))
+    {
+        return false;
+    }
+
+    if (!sendAll(sock, message.c_str(), message.size()))
+    {
+        return false;
+    }
+
+    if (!sendAll(sock, (const char*)&crc, 4))
+    {
+        return false;
+    }
+
+    return true;
 }
 int createListenSocket(int port)
 {
