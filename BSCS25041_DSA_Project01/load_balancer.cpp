@@ -8,12 +8,17 @@
 using namespace std;
 
 const char* SERVER_PATH = "./server";      // the program we start when the server is down
+
 const int IO_BUFFER_SIZE = 64 * 1024;      // fixed buffer for moving bytes
+
 const int LISTEN_BACKLOG = 16;             // connections the OS holds until accept() takes them
-const int MAX_PENDING_CLIENTS = 8;         // clients allowed to wait in our queue. More than this get "server busy".
+
+const int MAX_PENDING_CLIENTS = 8; // clients allowed to wait in our queue. More than this get "server busy".
 const int STARTUP_MAX_ATTEMPTS = 50;       // after starting the server, how many times we try to connect
+
 const int STARTUP_POLL_INTERVAL_MS = 100;  // wait between those tries (50 x 100 ms = 5 seconds in total)
 int lbPort = 5000;
+
 string serverHost = "127.0.0.0";
 int serverPort = 5001;
 
@@ -406,10 +411,24 @@ void handler(int sg) {
 }
 int main(int argc, char* argv[])
 {
+    initNetwork();
+    signal(SIGINT, handler);
 
-    signal(SIGINT, handler); // whenever ctrl+c will be pressed to exit the program the flag wll be set so insead of using infinite loop you can loop on flag to safely close things and exit
-    // 2. listenSock = createListenSocket(LB_PORT).
-    // 3. Start a thread that runs acceptLoop(listenSock) and detach it.
-    // 4. Call dispatcherLoop().
+    if (argc >= 3)
+    {
+        serverHost = argv[1];
+        serverPort = atoi(argv[2]);
+    }
+
+    int listenSock = createListenSocket(lbPort);
+
+    thread acceptor(acceptLoop, listenSock);
+    acceptor.detach();
+
+    dispatcherLoop();
+
+    closeSocket(listenSock);
+    WSACleanup();
     return 0;
+    
 }
