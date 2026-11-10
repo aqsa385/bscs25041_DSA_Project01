@@ -9,6 +9,7 @@
 #include <ws2tcpip.h>
 #include <csignal>
 #include <ctime>
+#include <stdexcept>
 #pragma comment(lib, "ws2_32.lib")     
 
 #define MSG_NOSIGNAL 0                  
@@ -39,7 +40,7 @@ inline void makeNotInheritable(int sock)
 using namespace std;
 
 const int IO_BUFFER_SIZE = 64 * 1024; 
-
+const int CLIENT_TIMEOUT_SEC = 30;
 const int MAX_VARS_PER_FRAME = 16;
 
 const int MAX_STACK_DEPTH = 64;

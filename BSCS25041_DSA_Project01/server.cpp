@@ -6,15 +6,17 @@
 #include <stdexcept>
 #include <cstdint>
 #include <cstdio>
+#include <sstream>
+#include <cstdlib>
+#include <cstring>
+#include "helper.h"
+
 using namespace std;
 
-const int32_t MAX_VARS_PER_FRAME = 16;
-const int32_t MAX_STACK_DEPTH = 64;
 const int32_t MAX_FUNCS = 128;
 const int32_t MAX_TOKENS = MAX_VARS_PER_FRAME + 2; 
 const int32_t MAX_PATCHES = MAX_FUNCS * 4;
 const uint64_t MAX_SOURCE_BYTES = 15ULL * 1024 * 1024; 
-const int32_t IO_BUFFER_SIZE = 64 * 1024;                  
 const int32_t SOCKET_TIMEOUT_SEC = 5;                      
 
 template <typename T>
@@ -100,7 +102,6 @@ public:
     }
 };
 
-struct Snapshot; 
 struct TimelineNode
 {
     Snapshot* data;
@@ -119,6 +120,19 @@ public:
         head = tail = nullptr;
         stepCount = 0;
     }
+
+    ~Timeline()
+    {
+        TimelineNode* cur = head;
+        while (cur != nullptr)
+        {
+            TimelineNode* nextNode = cur->next;
+            delete cur->data;
+            delete cur;
+            cur = nextNode;
+        }
+    }
+
     void record(Snapshot* s)
     {
         TimelineNode* n = new TimelineNode;
@@ -149,32 +163,6 @@ public:
     }
 };
 
-struct Variable
-{
-    string name;
-    int32_t value;
-};
-struct Frame
-{
-    string func_name;
-    int32_t argc;
-    Variable argv[MAX_VARS_PER_FRAME];
-    int32_t returnLine;
-    Variable locals[MAX_VARS_PER_FRAME];
-    int32_t localCount;
-};
-struct Snapshot
-{
-    Frame callStack[MAX_STACK_DEPTH];
-    int32_t stackDepth;
-};
-struct TTDBHeader
-{
-    char magic[4]; // "TTDB"
-    int32_t version;
-    int32_t stepCount;
-    int64_t indexOffset;
-};
 void writeHeader(FILE* f, const TTDBHeader& h)
 {
     fwrite(h.magic, 1, 4, f);
@@ -183,17 +171,6 @@ void writeHeader(FILE* f, const TTDBHeader& h)
     fwrite(&h.stepCount, sizeof(int32_t), 1, f);
     fwrite(&h.indexOffset, sizeof(int64_t), 1, f);
 }
-
-struct FuncEntry
-{
-    string funcName;
-    int64_t byteOffsetInResolveBin; 
-};
-struct PendingPatch
-{
-    int64_t byteOffsetOfOffsetField; 
-    string targetFuncName;
-};
 
 
 bool readSourceLine(ifstream& in, string& out)

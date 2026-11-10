@@ -9,8 +9,6 @@ using namespace std;
 
 const char* SERVER_PATH = "./server";      // the program we start when the server is down
 
-const int IO_BUFFER_SIZE = 64 * 1024;      // fixed buffer for moving bytes
-
 const int LISTEN_BACKLOG = 16;             // connections the OS holds until accept() takes them
 
 const int MAX_PENDING_CLIENTS = 8; // clients allowed to wait in our queue. More than this get "server busy".
@@ -19,8 +17,10 @@ const int STARTUP_MAX_ATTEMPTS = 50;       // after starting the server, how man
 const int STARTUP_POLL_INTERVAL_MS = 100;  // wait between those tries (50 x 100 ms = 5 seconds in total)
 int lbPort = 5000;
 
-string serverHost = "127.0.0.0";
-int serverPort = 5001;
+const char* SERVER_PATH = ".\\server.exe";
+string serverHost = "127.0.0.1";
+
+volatile sig_atomic_t flag = 1;
 
 template <typename T>
 class Queue
