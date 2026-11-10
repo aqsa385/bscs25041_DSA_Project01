@@ -479,8 +479,18 @@ void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot& s); // defi
 
 bool showCurrent(DebugSession& s)
 {
-    // Read the snapshot at s.currentStep, call printSnapshot, delete the snapshot.
-    // If readSnapshotAt returns nullptr, print "damaged .tdbg file" and return false.
+    Snapshot* snap = readSnapshotAt(s.reader, (int32_t)s.currentStep);
+
+    if (snap == nullptr)
+    {
+         cout << "damged .tdbg file" << endl;
+        return false;
+    }
+
+    printSnapshot((int32_t)s.currentStep + 1, s.reader.header.stepCount, *snap);
+    delete snap;
+
+    return true;
 }
 bool moveBy(DebugSession& s, int32_t delta)
 {
@@ -526,13 +536,44 @@ bool moveBy(DebugSession& s, int32_t delta)
 }
 bool cmdStart(DebugSession& s, const string& sourcePath)
 {
-    // 1. requestDebugFile with host and port, saving to TDBG_FILE.
-    // 2. If it fails, print the error text and return false. Keep the old session as it was.
-    // 3. Open the new file with openTdbg into a NEW local TdbgReader.
-    //    If that fails, print "server sent a damaged .tdbg file", keep the old session, return false.
-    // 4. Only now close the old reader (if s.active), then put the new reader into s,
-    //    set s.currentStep = 0 and s.active = true.
-    // 5. Show step 1 with showCurrent(s).
+    string err;
+    if (!requestDebugFile(LB_HOST.c_str(), LB_PORT, sourcePath.c_str(), TEMP_TDBG_FILE, err))
+    {
+        cout << err << endl;
+        return false;
+    }
+
+    TdbgReader newReader;
+
+    if (!openTdbg(TEMP_TDBG_FILE, newReader))
+    {
+        cout << "server sent a damaged .tdbg file" << endl;
+
+        remove(TEMP_TDBG_FILE);
+        return false;
+    }
+
+    closeTdbg(newReader);
+
+    if (s.active_flag)
+    {
+        closeTdbg(s.reader);
+        s.active_flag = 0;
+    }
+    remove(TDBG_FILE);
+
+    rename(TEMP_TDBG_FILE, TDBG_FILE);
+
+    if (!openTdbg(TDBG_FILE, s.reader))
+    {
+        cout << "server sent a damaged .tdbg file" << endl;
+        return false;
+    }
+    s.currentStep = 0;
+
+    s.active_flag = 1;
+
+    return showCurrent(s);
 }
 bool cmdNext(DebugSession& s)
 {
@@ -553,10 +594,6 @@ bool cmdJmpPrv(DebugSession& s, int32_t n)
     return moveBy(s, -n);
 }
 
-// =============================================================================================
-// PART E: PRINTING
-// =============================================================================================
-
 void printVariables(const Variable vars[], int32_t count)
 {
     if (count == 0)
@@ -576,15 +613,39 @@ void printVariables(const Variable vars[], int32_t count)
 
 void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot& s)
 {
+    cout << endl;
+    cout << "Step " << step << " of " << totalSteps << endl;
+
+    for (int i = 0; i < s.stackDepth; i++)
+    {
+        const Frame& fr = s.callStack[i];
+
+        cout << "[" << i << "] " << fr.func_name;
+        if (i == 0)
+        {
+            cout << "   <- running now";
+        }
+        cout << endl;
+
+        cout << "      args:   ";
+        printVariables(fr.argv, fr.argc);
+
+        cout << "      locals: ";
+        printVariables(fr.locals, fr.localCount);
+    }
+    cout << endl;
 }
 void printHelp()
 {
-    // Print the commands
+    cout << "Commands:" << endl;
+    cout << "  start <file>        send a source file to the server and begin debugging" << endl;
+    cout << "  next                go one step forward" << endl;
+    cout << "  prv                 go one step back" << endl;
+    cout << "  jmp next <n>        jump n steps forward" << endl;
+    cout << "  jmp prv <n>         jump n steps back" << endl;
+    cout << "  help                show this text" << endl;
+    cout << "  quit / exit         leave the debugger" << endl;
 }
-
-// =============================================================================================
-// PART F: THE INFINITE LOOP
-// =============================================================================================
 
 bool runCommand(DebugSession& s, const string& line, bool& quitRequested)
 {
