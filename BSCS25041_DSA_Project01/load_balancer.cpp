@@ -321,29 +321,83 @@ void relayOneClient(ClientInfo& c)
     closeSocket(c.sock);
 }
 
-
-// =============================================================================================
-// PART 3: THE TWO THREADS
-// =============================================================================================
-
-
 void acceptLoop(int listenSock)
 {
-    // Repeat: accept() a new client. 
-    //  If pendingClients.size() is already MAX_PENDING_CLIENTS: unlock, sendError "server busy, try again later",
-    // else
-    // Lock queueMutex.
-    //   close the client, and go on.
-    //   Otherwise enqueue the client socket.
-    // Never wait for the server here, so new clients are always accepted quickly.
-    // If accept() fails, print the error and keep going (do not end the thread).
+    while (flag)
+    {
+        sockaddr_in addr;
+        int len = sizeof(addr);
+
+        SOCKET s = accept(listenSock, (sockaddr*)&addr, &len);
+
+        if (s == INVALID_SOCKET)
+        {
+             cout << "accept() failed: " << WSAGetLastError() << endl;
+            sleepMs(100);
+            continue;
+        }
+
+        ClientInfo c;
+
+        c.sock = (int)s;
+
+        makeNotInheritable(c.sock);
+
+        char ip[INET_ADDRSTRLEN];
+
+        inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip));
+        c.address = ip;
+
+        c.port = ntohs(addr.sin_port);
+
+        c.arrivedAt = time(nullptr);
+
+        queueMutex.lock();
+
+        bool full = (pendingClients.size() >= MAX_PENDING_CLIENTS);
+
+        if (!full)
+        {
+            pendingClients.enqueue(c);
+        }
+        queueMutex.unlock();
+
+        if (full)
+        {
+            sendError(c.sock, "server busy, try again later");
+            closeSocket(c.sock);       
+        }
+    }
 }
 void dispatcherLoop()
 {
-    // This runs in the main thread and never ends.
-    // Repeat:
-    //   Lock queueMutex, take ONE client out of the queue if there is one, unlock.
-    //   If we got a client: call relayOneClient(). The next client is taken out of the queue only after this one is finished.
+    while (flag)
+    {
+        bool gotClient = false;
+        ClientInfo c;
+
+        queueMutex.lock();
+        if (!pendingClients.isEmpty())
+        {
+            c = pendingClients.dequeue();
+            gotClient = true;
+        }
+        queueMutex.unlock();
+
+        if (!gotClient)
+        {
+            sleepMs(50);        
+            continue;
+        }
+
+        if (time(nullptr) - c.arrivedAt > CLIENT_TIMEOUT_SEC)
+        {
+            closeSocket(c.sock);
+            continue;
+        }
+
+        relayOneClient(c);      
+    }
 }
 
 void handler(int sg) {
