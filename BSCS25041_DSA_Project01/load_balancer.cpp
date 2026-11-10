@@ -3,16 +3,10 @@
 #include <cstdlib>
 #include <thread>
 #include <mutex>
-#include <unistd.h>
 #include <signal.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include "helper.h"
 using namespace std;
 
-
-// ---- Constants ----
 const char* SERVER_PATH = "./server";      // the program we start when the server is down
 const int IO_BUFFER_SIZE = 64 * 1024;      // fixed buffer for moving bytes
 const int LISTEN_BACKLOG = 16;             // connections the OS holds until accept() takes them
@@ -117,6 +111,7 @@ bool sendAll(int sock, const char* buf, size_t n)
 {
     
 }
+
 bool sendError(int sock, const string& message)
 {
     char status = 1;

@@ -72,3 +72,55 @@ inline uint32_t crc32Update(uint32_t crc, const char* data, size_t n)
     }
     return ~crc;
 }
+
+class TrailerChecker
+{
+    string held;
+    uint32_t crc;
+
+public:
+    TrailerChecker()
+    {
+        crc = 0;
+    }
+
+    void addStatus(char status)
+    {
+        crc = crc32Update(crc, &status, 1);
+    }
+
+    string feed(const char* buf, size_t n)
+    {
+        held.append(buf, n);
+
+        string released = "";
+        if (held.size() > 4)
+        {
+            size_t extra = held.size() - 4;
+
+            released = held.substr(0, extra);
+            held.erase(0, extra);
+
+            crc = crc32Update(crc, released.c_str(), released.size());
+        }
+        return released;
+    }
+
+    bool verify()
+    {
+        if (held.size() != 4)
+        {
+            return false;
+        }
+        uint32_t received;
+
+        memcpy(&received, held.c_str(), 4);
+
+        return received == crc;
+    }
+
+    uint32_t currentCrc()
+    {
+        return crc;
+    }
+};
