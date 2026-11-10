@@ -143,29 +143,217 @@ bool uploadSource(int sock, const char* sourcePath)
 }
 bool receiveResponse(int sock, const char* outTdbgPath, string& outError)
 {
-    // Reply on the wire: [status][payload][CRC-32]. The CRC covers the status byte too.
-    // Feed every received byte (status included) to a TrailerChecker.
-    // Status 1: collect the payload into outError. Status 0: write the payload to the file.
-    // At the end call verify(). If it fails, delete the file, set outError to
-    // "checksum mismatch, response corrupted" and return false.
+    TrailerChecker tc;
+
+    char status;
+    if (!recvAll(sock, &status, 1))
+    {
+        outError = "no reply received (the server may have been busy or timed out)";
+        return false;
+    }
+    tc.addStatus(status);
+
+    FILE* f = NULL;
+    string errorText = "";
+
+    if (status == 0)
+    {
+        f = fopen(outTdbgPath, "wb");
+        if (f == NULL)
+        {
+            outError = "cannot create the .tdbg file";
+            return false;
+        }
+    }
+
+    char buf[IO_BUFFER_SIZE];
+    while (true)
+    {
+        int got = recv(sock, buf, IO_BUFFER_SIZE, 0);
+        if (got == 0)
+        {
+            break;
+        }
+        if (got < 0)
+        {
+            if (f != NULL)
+            {
+                fclose(f);
+                remove(outTdbgPath);
+            }
+            outError = "connection lost while receiving the reply";
+            return false;
+        }
+
+        string body = tc.feed(buf, got);
+        if (body.size() > 0)
+        {
+            if (status == 0)
+            {
+                fwrite(body.c_str(), 1, body.size(), f);
+            }
+            else
+            {
+                errorText += body;
+            }
+        }
+    }
+
+    if (f != NULL)
+    {
+        fclose(f);
+    }
+
+    if (!tc.verify())
+    {
+        if (status == 0)
+        {
+            remove(outTdbgPath);
+        }
+        outError = "checksum mismatch, response corupted";
+        return false;
+    }
+
+    if (status == 1)
+    {
+        outError = errorText;
+        return false;
+    }
+    return true;
 }
 
-// =============================================================================================
-// PART B: READING THE .tdbg FILE
-// File layout (written by Phase 1):
-//   header | snapshot 0 | snapshot 1 | ... | index (one 8 byte offset per snapshot)
-// The index lets us jump straight to any step without reading the steps before it.
-// =============================================================================================
+bool requestDebugFile(const char* host, int port, const char* sourcePath, const char* outPath, string& outError)
+{
+    FILE* test = fopen(sourcePath, "rb");
+
+    if (test == NULL)
+    {
+        outError = string("cannot open ") + sourcePath;
+
+        return false;
+    }
+
+    fclose(test);
+
+    int sock = connectToHost(host, port);
+    if (sock == -1)
+    {
+        outError = "cannot connect to the load balancer";
+        return false;
+    }
+
+    uploadSource(sock, sourcePath);
+    bool ok = receiveResponse(sock, outPath, outError);
+
+    closeSocket(sock);
+    return ok;
+}
+
+bool readInt(FILE* f, int32_t& x)
+{
+    return fread(&x, sizeof(int32_t), 1, f) == 1;
+}
+
+bool readString(FILE* f, string& s)
+{
+    int32_t len;
+    if (!readInt(f, len))
+    {
+        return false;
+    }
+
+    if (len < 0 or len > 10000)
+    {
+        return false;
+    }
+
+    s.resize(len);
+    if (len > 0)
+    {
+        if (fread(&s[0], 1, len, f) != (size_t)len)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool readVariable(FILE* f, Variable& v)
+{
+    if (!readString(f, v.name))
+    {
+        return false;
+    }
+    return readInt(f, v.value);
+}
+
+bool readFrame(FILE* f, Frame& fr)
+{
+    if (!readString(f, fr.func_name))
+    {
+        return false;
+    }
+
+    if (!readInt(f, fr.argc))
+    {
+        return false;
+    }
+
+    if (fr.argc < 0 or fr.argc > MAX_VARS_PER_FRAME)
+    {
+        return false;
+    }
+
+    for (int i = 0; i < fr.argc; i++)
+    {
+        if (!readVariable(f, fr.argv[i]))
+        {
+            return false;
+        }
+    }
+
+    if (!readInt(f, fr.returnLine))
+    {
+        return false;
+    }
+
+    if (!readInt(f, fr.localCount))
+    {
+        return false;
+    }
+
+    if (fr.localCount < 0 or fr.localCount > MAX_VARS_PER_FRAME)
+    {
+        return false;
+    }
+    for (int i = 0; i < fr.localCount; i++)
+    {
+        if (!readVariable(f, fr.locals[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 
 bool openTdbg(const char* path, TdbgReader& r)
 {
+
 }
 void closeTdbg(TdbgReader& r)
 {
-    // Free r.index and close the file.
+    r.index.clear();
+
+    if (r.file != NULL)
+    {
+        fclose(r.file);
+        r.file = NULL;
+    }
 }
 Snapshot* readSnapshotAt(TdbgReader& r, int32_t step)
 {
+
 }
 
 // =============================================================================================
