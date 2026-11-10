@@ -6,6 +6,7 @@
 #include <cstring>
 #include <signal.h>
 #include <vector>
+#include <sstream>
 #include "helper.h"
 using namespace std;
 
@@ -13,56 +14,25 @@ using namespace std;
 const char* PROGRAM_NAME = "ttdb";
 const char* PROMPT = "ttdb> ";
 
-const int IO_BUFFER_SIZE = 64 * 1024;
-
 const char* TDBG_FILE = "ttdb_last.tdbg";
+const char* TEMP_TDBG_FILE = "ttdb_new.tdbg";
 const int MAX_JUMP = 1000000000;   
 
-string LB_HOST = "127.0.0.0";
+string LB_HOST = "127.0.0.1";
 int LB_PORT = 5000;
-
-const int MAX_VARS_PER_FRAME = 16;
-const int MAX_STACK_DEPTH = 64;
-
-
-struct Variable
-{
-    string name;
-    int32_t value;
-};
-struct Frame
-{
-    string func_name;
-    int32_t argc;
-    Variable argv[MAX_VARS_PER_FRAME];
-    int32_t returnLine;
-    Variable locals[MAX_VARS_PER_FRAME];
-    int32_t localCount;
-};
-struct Snapshot
-{
-    Frame callStack[MAX_STACK_DEPTH];
-    int32_t stackDepth;
-};
-struct TTDBHeader
-{
-    char magic[4]; 
-    int32_t version;
-    int32_t stepCount;
-    int64_t indexOffset;
-};
 
 struct TdbgReader
 {
-    ssize_t file_index;
+    FILE* file = NULL;
     TTDBHeader header;
     vector<int64_t> index;
 };
+
 struct DebugSession
 {
-    int active_flag;     
+    int active_flag = 0;     
     TdbgReader reader;   
-    int64_t currentStep;
+    int64_t currentStep = 0;
 };
 
 bool recvAll(int sock, char* buf, size_t n)
@@ -82,20 +52,94 @@ bool recvAll(int sock, char* buf, size_t n)
 
 bool sendAll(int sock, const char* buf, size_t n)
 {
-    // send() can send fewer bytes than asked for, so keep calling it until all n bytes are sent.
-    // Use the flag MSG_NOSIGNAL. Return false if the connection fails.
+    size_t sent = 0;
+    while (sent < n)
+    {
+        int r = send(sock, buf + sent, (int)(n - sent), MSG_NOSIGNAL);
+        if (r <= 0)
+        {
+            return false;
+        }
+        sent += r;
+    }
+    return true;
 }
 
 int connectToHost(const char* host, int port)
 {
-    // Create a TCP socket and connect it to host:port.
-    // Return the socket, or -1 if the connection fails.
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET)
+    {
+        return -1;
+    }
+    int sock = (int)s;
+
+    sockaddr_in addr;
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+
+    addr.sin_port = htons(port);
+
+    if (inet_pton(AF_INET, host, &addr.sin_addr) != 1)
+    {
+        closeSocket(sock);
+        return -1;
+    }
+
+    if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+    {
+        closeSocket(sock);
+        return -1;
+    }
+    return sock;
 }
 bool uploadSource(int sock, const char* sourcePath)
 {
-    // have to do checksum and then send
-    // When the file is finished, call shutdown(sock, SHUT_WR). This is how the server knows the string is complete.
-    // Return false if the file cannot be opened or any send fails.
+    FILE* f = fopen(sourcePath, "rb");
+    if (f == NULL)
+    {
+        return false;
+    }
+
+    char status = 0;
+
+    uint32_t crc = 0;
+
+    crc = crc32Update(crc, &status, 1);
+
+    if (!sendAll(sock, &status, 1))
+    {
+        fclose(f);
+        return false;
+    }
+
+    char buf[IO_BUFFER_SIZE];
+    while (true)
+    {
+        size_t n = fread(buf, 1, IO_BUFFER_SIZE, f);
+        if (n == 0)
+        {
+            break;
+        }
+        crc = crc32Update(crc, buf, n);
+
+        if (!sendAll(sock, buf, n))
+        {
+            fclose(f);
+            return false;
+        }
+    }
+    fclose(f);
+
+    if (!sendAll(sock, (const char*)&crc, 4))
+    {
+        return false;
+    }
+
+    shutdown(sock, SHUT_WR);
+
+    return true;
 }
 bool receiveResponse(int sock, const char* outTdbgPath, string& outError)
 {

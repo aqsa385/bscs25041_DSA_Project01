@@ -430,15 +430,16 @@ int64_t resolveProgram(const char* sourcePath, const char* resolveBinPath)
     return -1;
 }
 
-enum TokenType
+enum TokKind
 {
     KEYWORD,
     IDENTIFIER,
     PARAM
 };
+
 struct Token
 {
-    TokenType type;
+    TokKind type;
     string text;
 };
 
