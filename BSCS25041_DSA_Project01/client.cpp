@@ -339,7 +339,86 @@ bool readFrame(FILE* f, Frame& fr)
 
 bool openTdbg(const char* path, TdbgReader& r)
 {
+    r.file = fopen(path, "rb");
+    if (r.file == NULL)
+    {
+        return false;
+    }
 
+    bool ok = true;
+    if (fread(r.header.magic, 1, 4, r.file) != 4)
+    {
+        ok = false;
+    }
+
+    if (ok && fread(&r.header.version, sizeof(int32_t), 1, r.file) != 1) 
+    {
+        ok = false;
+    }
+
+    if (ok && fread(&r.header.stepCount, sizeof(int32_t), 1, r.file) != 1) 
+    {
+        ok = false;
+    }
+
+    if (ok && fread(&r.header.indexOffset, sizeof(int64_t), 1, r.file) != 1) 
+    {
+        ok = false;
+    }
+
+    if (ok && memcmp(r.header.magic, "TTDB", 4) != 0) 
+    {
+        ok = false;
+    }
+
+    if (ok && r.header.stepCount <= 0) 
+    {
+        ok = false;
+    }
+
+    if (ok && r.header.indexOffset < 20) 
+    {
+        ok = false;
+    }
+
+    if (ok)
+    {
+        fseek(r.file, 0, SEEK_END);
+        int64_t fileSize = ftell(r.file);
+
+        if (r.header.indexOffset + (int64_t)r.header.stepCount * 8 > fileSize)
+        {
+            ok = false;
+        }
+    }
+
+    if (ok)
+    {
+        fseek(r.file, (long)r.header.indexOffset, SEEK_SET);
+
+        r.index.resize(r.header.stepCount);
+
+        for (int i = 0; i < r.header.stepCount; i++)
+        {
+            if (fread(&r.index[i], sizeof(int64_t), 1, r.file) != 1)
+            {
+                ok = false;
+                break;
+            }
+            if (r.index[i] < 20 or r.index[i] >= r.header.indexOffset)
+            {
+                ok = false;
+                break;
+            }
+        }
+    }
+
+    if (!ok)
+    {
+        closeTdbg(r);
+        return false;
+    }
+    return true;
 }
 void closeTdbg(TdbgReader& r)
 {
@@ -353,22 +432,47 @@ void closeTdbg(TdbgReader& r)
 }
 Snapshot* readSnapshotAt(TdbgReader& r, int32_t step)
 {
+    if (r.file == NULL or step < 0 or step >= r.header.stepCount)
+    {
+        return nullptr;
+    }
 
+    fseek(r.file, (long)r.index[step], SEEK_SET);
+
+    Snapshot* s = new Snapshot;
+
+    if (!readInt(r.file, s->stackDepth) or s->stackDepth < 0 or s->stackDepth > MAX_STACK_DEPTH)
+    {
+        delete s;
+        return nullptr;
+    }
+
+    for (int i = 0; i < s->stackDepth; i++)
+    {
+        if (!readFrame(r.file, s->callStack[i]))
+        {
+            delete s;
+            return nullptr;
+        }
+    }
+    return s;
 }
-
-// =============================================================================================
-// PART C: THE SESSION IN MEMORY
-// There is one DebugSession variable, created in main() and passed to every command by reference.
-// =============================================================================================
 
 void initSession(DebugSession& s)
 {
+    s.active_flag = 0;
 
+    s.currentStep = 0;
+
+    s.reader.file = NULL;
 }
 void closeSession(DebugSession& s)
 {
-    // If active, call closeTdbg(s.reader). Then set active = false.
-    // Called when the user types quit and when the input ends.
+    if (s.active_flag)
+    {
+        closeTdbg(s.reader);
+    }
+    s.active_flag = 0;
 }
 
 // =============================================================================================
