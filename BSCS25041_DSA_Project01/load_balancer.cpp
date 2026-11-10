@@ -150,17 +150,67 @@ bool sendError(int sock, const string& message)
 }
 int createListenSocket(int port)
 {
-    // Create a TCP socket with SOCK_CLOEXEC(flag).
-    // set SO_REUSEADDR so we can restart the load balancer right away.
-    // bind() to the port on any address, then listen(LISTEN_BACKLOG).
-    // If bind or listen fails, print the error and exit, because without this socket we cannot work.
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET)
+    {
+        cout << "socket() failed: " << WSAGetLastError() << endl;
+        exit(1);
+    }
+    int sock = (int)s;
+    makeNotInheritable(sock);
+
+    int yes = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
+
+    sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);   
+
+    addr.sin_port = htons(port);
+
+    if (bind(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+    {
+        cout << "bind() failed: " << WSAGetLastError() << endl;
+        exit(1);
+    }
+    if (listen(sock, LISTEN_BACKLOG) == SOCKET_ERROR)
+    {
+        cout << "listen() failed: " << WSAGetLastError() << endl;
+        exit(1);
+    }
+    return sock;
 }
 int connectToServer(const char* host, int port)
 {
-    // Create a TCP socket (SOCK_CLOEXEC) and connect it to host:port.
-    // Return the socket, or -1 if the connection fails 
-}
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET)
+    {
+        return -1;
+    }
+    int sock = (int)s;
+    makeNotInheritable(sock);
 
+    sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+
+    addr.sin_port = htons(port);
+
+    if (inet_pton(AF_INET, host, &addr.sin_addr) != 1)
+    {
+        closeSocket(sock);
+        return -1;
+    }
+
+    if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+    {
+        closeSocket(sock);
+        return -1;
+    }
+    return sock;
+}
 // =============================================================================================
 // PART 1: WAKING UP THE SERVER IF IT IS DOWN
 // =============================================================================================
