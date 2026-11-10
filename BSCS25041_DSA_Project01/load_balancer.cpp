@@ -211,31 +211,36 @@ int connectToServer(const char* host, int port)
     }
     return sock;
 }
-// =============================================================================================
-// PART 1: WAKING UP THE SERVER IF IT IS DOWN
-// =============================================================================================
-
 
 bool startServer(int port)
 {
-    // Build the command text: SERVER_PATH + " " + port as text + "&"
-    //   Example: "./server 5001 &"
-    // Call system() with it.
-    // Return true if system() returned 0, otherwise false.
+    string cmd = string("start /B ") + SERVER_PATH + " " + to_string(port);
+    return system(cmd.c_str()) == 0;
 }
 int connectToServerWithWakeup()
 {
-    // 1. Try connectToServer(). If it works, return that socket. The server is alive.
-    // 2. Otherwise call startServer(). If it fails, return -1.
-    // 3. Try connectToServer() up to STARTUP_MAX_ATTEMPTS times 
-    // 4. Return the first working socket, or -1 if the server never came up.
+    int s = connectToServer(serverHost.c_str(), serverPort);
+    if (s != -1)
+    {
+        return s;
+    }
+
+    if (!startServer(serverPort))
+    {
+        return -1;
+    }
+
+    for (int i = 0; i < STARTUP_MAX_ATTEMPTS; i++)
+    {
+        sleepMs(STARTUP_POLL_INTERVAL_MS);
+        s = connectToServer(serverHost.c_str(), serverPort);
+        if (s != -1)
+        {
+            return s;
+        }
+    }
+    return -1;
 }
-
-
-// =============================================================================================
-// PART 2: PASSING THE STRING AND THE REPLY (one client, called by the main thread only)
-// =============================================================================================
-
 
 void relayOneClient(ClientInfo& c)
 {
