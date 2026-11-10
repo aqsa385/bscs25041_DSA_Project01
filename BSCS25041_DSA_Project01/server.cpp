@@ -942,26 +942,175 @@ bool sendFileReply(int sock, const char* path)
     return sendAll(sock, (const char*)&crc, 4);
 }
 
-
-int32_t main()
+bool receiveSource(int sock, const char* path)
 {
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr)
+    {
+        return false;
+    }
+
+    TrailerChecker tc;
+    char status;
+    if (recv(sock, &status, 1, 0) <= 0)
+    {
+        fclose(f);
+        return false;
+    }
+    tc.addStatus(status);
+
+    char buf[IO_BUFFER_SIZE];
+    uint64_t total = 0;
+
+    while (true)
+    {
+        int got = recv(sock, buf, IO_BUFFER_SIZE, 0);
+        if (got == 0)
+        {
+            break;
+        }
+        if (got < 0)
+        {
+            fclose(f);
+            return false;
+        }
+
+        total += got;
+        if (total > MAX_SOURCE_BYTES)
+        {
+            fclose(f);
+            return false;
+        }
+
+        string body = tc.feed(buf, got);
+        if (body.size() > 0)
+        {
+            fwrite(body.c_str(), 1, body.size(), f);
+        }
+    }
+    fclose(f);
+    return tc.verify();
+}
+
+void handleClient(int sock)
+{
+    DWORD timeout = SOCKET_TIMEOUT_SEC * 1000;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+
+    if (!receiveSource(sock, "source.bin"))
+    {
+        sendErrorReply(sock, "checksum mismatch, upload corrupted");
+        return;
+    }
+
+    stringstream captured;
+    
+    streambuf* oldBuf = cout.rdbuf(captured.rdbuf());
+
+    bool ok = true;
+    int64_t mainOffset = -1;
 
     if (!validateProgram("source.bin"))
     {
-        return 1;
+        ok = false;
     }
-
-    int64_t mainOffset = resolveProgram("source.bin", "resolve.bin");
-
-    if (mainOffset == -1)
+    else
     {
-        return 1;
+        mainOffset = resolveProgram("source.bin", "resolve.bin");
+        if (mainOffset == -1)
+        {
+            ok = false;
+        }
     }
 
-    Timeline timeline;
-    executeProgram("resolve.bin", mainOffset, timeline);
+    if (ok)
+    {
+        Timeline timeline;
+        executeProgram("resolve.bin", mainOffset, timeline);
+        writeTdbg(timeline, "session.tdbg");
+    }
 
-    writeTdbg(timeline, "session.tdbg");
+    cout.rdbuf(oldBuf);   
 
+    if (!ok)
+    {
+        string msg = captured.str();
+        if (msg.size() == 0)
+        {
+            msg = "invalid program";
+        }
+        sendErrorReply(sock, msg);
+        return;
+    }
+
+    sendFileReply(sock, "session.tdbg");
+}
+
+int createListenSocket(int port)
+{
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET)
+    {
+        cout << "socket() failed" << endl;
+        exit(1);
+    }
+    int sock = (int)s;
+    makeNotInheritable(sock);
+
+    int yes = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&yes, sizeof(yes));
+
+    sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+
+    addr.sin_family = AF_INET;
+
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    addr.sin_port = htons(port);
+
+    if (bind(sock, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
+    {
+        cout << "bind() failed" << endl;
+        exit(1);
+    }
+    if (listen(sock, 5) == SOCKET_ERROR)
+    {
+        cout << "listen() failed" << endl;
+        exit(1);
+    }
+    return sock;
+}
+
+int main(int argc, char* argv[])
+{
+    int port = 5001;
+    if (argc >= 2)
+    {
+        port = atoi(argv[1]);
+    }
+
+    initNetwork();
+
+    int listenSock = createListenSocket(port);
+
+     cout << "server listenning on port " << port << endl;
+
+    while (true)
+    {
+        SOCKET s = accept(listenSock, NULL, NULL);
+
+        if (s == INVALID_SOCKET)
+        {
+             continue;
+        }
+        int sock = (int)s;
+
+        makeNotInheritable(sock);
+
+        handleClient(sock);
+
+        closeSocket(sock);
+    }
     return 0;
 }
