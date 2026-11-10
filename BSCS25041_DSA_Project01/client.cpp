@@ -475,10 +475,6 @@ void closeSession(DebugSession& s)
     s.active_flag = 0;
 }
 
-// =============================================================================================
-// PART D: THE COMMANDS
-// =============================================================================================
-
 void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot& s); // defined in Part E
 
 bool showCurrent(DebugSession& s)
@@ -488,6 +484,45 @@ bool showCurrent(DebugSession& s)
 }
 bool moveBy(DebugSession& s, int32_t delta)
 {
+    if (!s.active_flag)
+    {
+        cout << "No sesion yet. Use: start <source file>" << endl;
+        return false;
+    }
+
+    int64_t last = s.reader.header.stepCount - 1;
+    int64_t oldStep = s.currentStep;
+
+    int64_t target = s.currentStep + delta;
+
+    if (target > last)
+    {
+        if (oldStep == last)
+        {
+            cout << "Already at the last step." << endl;
+            return false;
+        }
+        cout << "Not enough steps, moving to the last step." << endl;
+        target = last;
+    }
+    else if (target < 0)
+    {
+        if (oldStep == 0)
+        {
+            cout << "Already at the first step." << endl;
+            return false;
+        }
+        cout << "Not enough steps, moving to the first step." << endl;
+        target = 0;
+    }
+
+    s.currentStep = target;
+    if (!showCurrent(s))
+    {
+        s.currentStep = oldStep;
+        return false;
+    }
+    return true;
 }
 bool cmdStart(DebugSession& s, const string& sourcePath)
 {
@@ -499,14 +534,45 @@ bool cmdStart(DebugSession& s, const string& sourcePath)
     //    set s.currentStep = 0 and s.active = true.
     // 5. Show step 1 with showCurrent(s).
 }
-bool cmdNext(DebugSession& s) {}
-bool cmdPrv(DebugSession& s) {}
-bool cmdJmpNext(DebugSession& s, int32_t n) {}
-bool cmdJmpPrv(DebugSession& s, int32_t n) {}
+bool cmdNext(DebugSession& s)
+{
+    return moveBy(s, 1);
+}
+bool cmdPrv(DebugSession& s)
+{
+    return moveBy(s, -1);
+}
+
+bool cmdJmpNext(DebugSession& s, int32_t n)
+{
+    return moveBy(s, n);
+}
+
+bool cmdJmpPrv(DebugSession& s, int32_t n) 
+{
+    return moveBy(s, -n);
+}
 
 // =============================================================================================
 // PART E: PRINTING
 // =============================================================================================
+
+void printVariables(const Variable vars[], int32_t count)
+{
+    if (count == 0)
+    {
+        cout << "(none)";
+    }
+    for (int i = 0; i < count; i++)
+    {
+        cout << vars[i].name << " = " << vars[i].value;
+        if (i < count - 1)
+        {
+            cout << ", ";
+        }
+    }
+    cout << endl;
+}
 
 void printSnapshot(int32_t step, int32_t totalSteps, const Snapshot& s)
 {
