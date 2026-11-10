@@ -242,16 +242,83 @@ int connectToServerWithWakeup()
     return -1;
 }
 
+bool forwardMessage(int fromSock, int toSock)
+{
+    TrailerChecker tc;
+    char buf[IO_BUFFER_SIZE];
+
+    char status;
+    if (recv(fromSock, &status, 1, 0) <= 0)
+    {
+        return false;
+    }
+
+    tc.addStatus(status);
+    if (!sendAll(toSock, &status, 1))
+    {
+        return false;
+    }
+
+    while (true)
+    {
+        int got = recv(fromSock, buf, IO_BUFFER_SIZE, 0);
+        if (got == 0)
+        {
+            break;             
+        }
+        if (got < 0)
+        {
+            return false;     
+        }
+
+        string body = tc.feed(buf, got);      
+        if (body.size() > 0)
+        {
+            if (!sendAll(toSock, body.c_str(), body.size()))
+            {
+                return false;
+            }
+        }
+    }
+
+    if (!tc.verify())
+    {
+        return false;
+    }
+    uint32_t crc = tc.currentCrc();
+    return sendAll(toSock, (const char*)&crc, 4);
+}
+
 void relayOneClient(ClientInfo& c)
 {
-    // 1. serverSock = connectToServerWithWakeup().
-    //    If it is -1: sendError "backend server failed to start", close clientSock, return.
-    // 3. Client -> server: repeat recv() from clientSock into a buffer of IO_BUFFER_SIZE and sendAll() it to serverSock.
-    //    Stop when recv() returns 0 (the client finished sending) or fails.
-    // 4. Call shutdown(serverSock, SHUT_WR), so the server knows the string is complete.
-    // 5. Server -> client: repeat recv() from serverSock and sendAll() to clientSock.
-    //    Stop when recv() returns 0 (the server sent its whole reply and closed) or fails.
-    // 6. Close both sockets.
+    int serverSock = connectToServerWithWakeup();
+
+    if (serverSock == -1)
+    {
+        sendError(c.sock, "backend server faiiled to start");
+
+        closeSocket(c.sock);
+        return;
+    }
+
+    bool uploadOk = forwardMessage(c.sock, serverSock);
+
+    shutdown(serverSock, SHUT_WR);
+
+    if (!uploadOk)
+    {
+        sendError(c.sock, "checksum mismatch, upload corupted");
+        closeSocket(serverSock);
+
+        closeSocket(c.sock);
+        return;
+    }
+
+    forwardMessage(serverSock, c.sock);
+
+    closeSocket(serverSock);
+
+    closeSocket(c.sock);
 }
 
 
