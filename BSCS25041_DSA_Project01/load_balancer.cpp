@@ -109,7 +109,17 @@ sig_atomic_t flag = 1;
 
 bool sendAll(int sock, const char* buf, size_t n)
 {
-    
+    size_t sent = 0;
+    while (sent < n)
+    {
+        int r = send(sock, buf + sent, (int)(n - sent), MSG_NOSIGNAL);
+        if (r <= 0)
+        {
+            return false;     
+        }
+        sent += r;
+    }
+    return true;
 }
 
 bool sendError(int sock, const string& message)

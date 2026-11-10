@@ -1,5 +1,38 @@
 #pragma once
 
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#define NOMINMAX
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <csignal>
+#include <ctime>
+#pragma comment(lib, "ws2_32.lib")     
+
+#define MSG_NOSIGNAL 0                  
+#define SHUT_WR SD_SEND                 
+typedef SSIZE_T ssize_t;
+
+inline void initNetwork()             
+{
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+}
+inline void closeSocket(int sock)      
+{
+    closesocket(sock);
+}
+inline void sleepMs(int ms)             
+{
+    Sleep(ms);
+}
+inline void makeNotInheritable(int sock)   
+{
+    SetHandleInformation((HANDLE)(SOCKET)sock, HANDLE_FLAG_INHERIT, 0);
+}
+
 #include <string>
 #include <cstdint>
 #include <cstring>
