@@ -821,6 +821,8 @@ void writeTdbg(Timeline& timeline, const char* tdbgPath)
     int32_t steps = timeline.getStepCount();
 
     TTDBHeader h;
+    memcpy(h.magic, "TTDB", 4);
+
     h.version = 1;
     h.stepCount = 0;
     
@@ -868,6 +870,78 @@ void writeTdbg(Timeline& timeline, const char* tdbgPath)
     delete[] index;
 
 }
+
+bool sendAll(int sock, const char* buf, size_t n)
+{
+    size_t sent = 0;
+    while (sent < n)
+    {
+        int r = send(sock, buf + sent, (int)(n - sent), MSG_NOSIGNAL);
+        if (r <= 0)
+        {
+            return false;
+        }
+        sent += r;
+    }
+    return true;
+}
+
+bool sendErrorReply(int sock, const string& message)
+{
+    char status = 1;
+    uint32_t crc = 0;
+    crc = crc32Update(crc, &status, 1);
+
+    crc = crc32Update(crc, message.c_str(), message.size());
+
+    if (!sendAll(sock, &status, 1))
+    {
+        return false;
+    }
+
+    if (!sendAll(sock, message.c_str(), message.size()))
+    {
+        return false;
+    }
+
+    return sendAll(sock, (const char*)&crc, 4);
+}
+
+bool sendFileReply(int sock, const char* path)
+{
+    FILE* f = fopen(path, "rb");
+    if (f == nullptr)
+    {
+        return sendErrorReply(sock, "server could not open the session file");
+    }
+
+    char status = 0;
+    uint32_t crc = 0;
+
+    crc = crc32Update(crc, &status, 1);
+
+    sendAll(sock, &status, 1);
+
+    char buf[IO_BUFFER_SIZE];
+    while (true)
+    {
+        size_t n = fread(buf, 1, IO_BUFFER_SIZE, f);
+        if (n == 0)
+        {
+            break;
+        }
+        crc = crc32Update(crc, buf, n);
+
+        if (!sendAll(sock, buf, n))
+        {
+            fclose(f);
+            return false;
+        }
+    }
+    fclose(f);
+    return sendAll(sock, (const char*)&crc, 4);
+}
+
 
 int32_t main()
 {
