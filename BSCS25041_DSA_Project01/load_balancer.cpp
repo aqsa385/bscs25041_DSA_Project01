@@ -7,18 +7,19 @@
 #include "helper.h"
 using namespace std;
 
-const char* SERVER_PATH = "./server";      // the program we start when the server is down
+const char* SERVER_PATH = ".\\server.exe";  
 
-const int LISTEN_BACKLOG = 16;             // connections the OS holds until accept() takes them
+const int LISTEN_BACKLOG = 16;
 
-const int MAX_PENDING_CLIENTS = 8; // clients allowed to wait in our queue. More than this get "server busy".
-const int STARTUP_MAX_ATTEMPTS = 50;       // after starting the server, how many times we try to connect
+const int MAX_PENDING_CLIENTS = 8;
+const int STARTUP_MAX_ATTEMPTS = 50;
 
-const int STARTUP_POLL_INTERVAL_MS = 100;  // wait between those tries (50 x 100 ms = 5 seconds in total)
+const int STARTUP_POLL_INTERVAL_MS = 100;
+
 int lbPort = 5000;
 
-const char* SERVER_PATH = ".\\server.exe";
 string serverHost = "127.0.0.1";
+int serverPort = 5001;                      
 
 volatile sig_atomic_t flag = 1;
 
@@ -109,8 +110,6 @@ struct ClientInfo
 
 Queue<ClientInfo> pendingClients;
 mutex queueMutex;
-sig_atomic_t flag = 1;
-
 
 bool sendAll(int sock, const char* buf, size_t n)
 {

@@ -647,31 +647,141 @@ void printHelp()
     cout << "  quit / exit         leave the debugger" << endl;
 }
 
+bool parseNumber(const string& w, int32_t& out)
+{
+    if (w.size() == 0 or w.size() > 9)
+    {
+        return false;
+    }
+
+    int32_t value = 0;
+
+    for (int i = 0; i < w.size(); i++)
+    {
+        if (w[i] < '0' or w[i] > '9')
+        {
+            return false;
+        }
+        value = value * 10 + (w[i] - '0');
+    }
+
+    if (value <= 0 or value > MAX_JUMP)
+    {
+        return false;
+    }
+    out = value;
+    return true;
+}
+
 bool runCommand(DebugSession& s, const string& line, bool& quitRequested)
 {
-    // 1. Split the line into words.
-    // 2. If the first word is "ttdb", drop it.
-    // 3. Match the first word:
-    //      start      -> needs a path after it, then cmdStart
-    //      next       -> no more words, then cmdNext
-    //      prv        -> no more words, then cmdPrv
-    //      jmp        -> second word "next" or "prv", third word a positive number ,
-    //                    then cmdJmpNext or cmdJmpPrv
-    //      help       -> printHelp
-    //      quit, exit -> set quitRequested = true
-    // 4. For anything else, or a wrong number of words, print "unknown command" and the help text, and return false.
+    vector<string> words;
+
+    istringstream in(line);
+    string w;
+
+    while (in >> w)
+    {
+        words.push_back(w);
+    }
+
+    if (words.size() == 0)
+    {
+        return true;       
+    }
+
+    if (words[0] == PROGRAM_NAME)
+    {
+        words.erase(words.begin());
+    }
+
+    if (words.size() > 0)
+    {
+        string cmd = words[0];
+
+        if (cmd == "start" && words.size() == 2)
+        {
+            return cmdStart(s, words[1]);
+        }
+
+        if (cmd == "next" && words.size() == 1)
+        {
+            return cmdNext(s);
+        }
+
+        if (cmd == "prv" && words.size() == 1)
+        {
+            return cmdPrv(s);
+        }
+
+        if (cmd == "jmp" && words.size() == 3)
+        {
+            int32_t n;
+            if (parseNumber(words[2], n))
+            {
+                if (words[1] == "next")
+                {
+                    return cmdJmpNext(s, n);
+                }
+                if (words[1] == "prv")
+                {
+                    return cmdJmpPrv(s, n);
+                }
+            }
+        }
+        if (cmd == "help" && words.size() == 1)
+        {
+            printHelp();
+            return true;
+        }
+        if ((cmd == "quit" or cmd == "exit") && words.size() == 1)
+        {
+            quitRequested = true;
+            return true;
+        }
+    }
+
+    cout << "unknown command" << endl;
+
+    printHelp();
+    return false;
 }
 int main(int argc, char* argv[])
 {
-    // you get string LB_HOST and int LB_PORT = 0 in arguments of this main function. 
+    initNetwork();
 
-    // DebugSession session; initSession(session);
-    // Print a short welcome and the help text.
-    //
-    // Infinite loop:
-    //   if quitRequested, break
-    //
-    // After the loop: closeSession(session) and return 0.
-    // Never exit the loop because of an error. Only quit or the end of the input leaves it.
+    if (argc >= 3)
+    {
+        LB_HOST = argv[1];
+        LB_PORT = atoi(argv[2]);
+    }
 
+    DebugSession session;
+    initSession(session);
+
+    cout << "Welcome to the Time-Travel Debuger" << endl;
+    printHelp();
+
+    bool quitRequested = false;
+
+    while (true)
+    {
+        if (quitRequested)
+        {
+            break;
+        }
+
+        cout << PROMPT;
+        string line;
+        if (!getline(cin, line))
+        {
+            break;              
+        }
+
+        runCommand(session, line, quitRequested);
+    }
+
+    closeSession(session);
+    WSACleanup();
+    return 0;
 }
